@@ -36,7 +36,7 @@ Deploying is the easy part for an agent. Getting a result worth deploying is the
 | Go-based [`sqlcmd`](https://learn.microsoft.com/sql/tools/sqlcmd/sqlcmd-download-install) | Required for Phase 3 | The post-provision hook creates the database user | `sqlcmd --version` |
 | [Xcode](https://developer.apple.com/xcode/) 16 or later with an iOS simulator runtime | Required only to run Phase 2 on your machine | Build and test the SwiftUI app | `xcodebuild -version`, then `xcrun simctl list runtimes` shows an iOS runtime |
 
-You also need a GitHub account, an Azure subscription, and a GitHub Copilot plan. Copilot code review and the Copilot cloud agent (Phase 4) need a plan that includes them. If yours doesn't, each of those steps gives an alternative, and every gate still runs.
+You also need a GitHub account, an Azure subscription, and a GitHub Copilot plan. Copilot code review and the Copilot cloud agent (Phase 4) need a plan that includes them. Without Copilot code review, run the setup script with `--no-copilot-review`, run `/review` before you open each pull request, and triage its findings with the same rules. Without the cloud agent, use the local alternative in Phase 4 Step 2. Every gate still runs.
 
 **Before you start:**
 
@@ -172,8 +172,6 @@ Steps marked 🐙 use GitHub.com features and need your own repository.
 
 **Which model?** Use a frontier model for the plan interview, the red phases, and infrastructure (`/model` in the CLI, or the model control in the app). Smaller models are often enough for green phases, because the tests tell them exactly when they're done. Check spending with `/usage`. To cap it in the CLI, add `--max-ai-credits <n>` after `/autopilot`, set a session limit with `/limits`, or start with `copilot --max-ai-credits <n>`.
 
-**Without Copilot code review:** run the setup script with `--no-copilot-review`, and run `/review` before you open each pull request instead. Triage its findings with the same rules. Everything else is unchanged.
-
 <details>
 <summary><strong>When something fails</strong></summary>
 
@@ -221,7 +219,7 @@ The app gets its own workspace and GitHub repository, so this repository stays u
 node journeys/smart-todo/setup/setup.mjs
 ```
 
-It copies the journey into `../smart-todo-workspace`, commits it, creates a public `smart-todo` repository with CI, protects `main` with a ruleset, and waits for the first CI run. Add `--private` for a private repository (rulesets there need GitHub Pro, Team, or Enterprise), `--no-copilot-review` if your plan doesn't include Copilot code review, or `--start-at <phase>` to [start at a later phase](#short-on-time-start-at-a-later-phase). `--help` lists every option.
+It copies the journey into `../smart-todo-workspace`, commits it, creates a public `smart-todo` repository with CI, protects `main` with a ruleset, and waits for the first CI run. Add `--private` for a private repository (rulesets there need GitHub Pro, Team, or Enterprise), `--no-copilot-review` if your plan doesn't include Copilot code review (see [Prerequisites](#prerequisites)), or `--start-at <phase>` to [start at a later phase](#short-on-time-start-at-a-later-phase). `--help` lists every option.
 
 **Gate:** The script ends with `Ruleset: active` and `CI on main: success`.
 
@@ -401,7 +399,7 @@ Watch the checks with `gh pr checks --watch`, or in the app's **Pull requests** 
   triage procedure in the "Review Triage" section of PLAN.md.
 ```
 
-Copilot reviews each pull request once, so there's no second round. **Leave the pull request open** when its checks are green and its threads are resolved. The whole stack merges at the end of Phase 3 in one command. Merging this layer early would point the next layer's pull request at `main`, which starts a Copilot review you don't need.
+**Leave the pull request open** when its checks are green and its threads are resolved. The whole stack merges from the top at the end of Phase 3 ([why](./PLAN.md#stacked-pull-requests)).
 
 **💡 What you're learning:** Each reviewer finds things the others miss: tests catch contract bugs, `/review` catches gaps in the plan, and Copilot code review caught a model parameter that gpt-5-mini rejects in production. Layers of review pay off. Extra rounds don't, because each one finds something new in the last fix.
 
@@ -809,29 +807,16 @@ Remove the API worktree with `git worktree remove ../../../smart-todo-api`. If y
 
 ## Lessons from Validation Runs
 
-This journey was run end to end seven times before publishing. Each rule below exists because a run broke without it.
+This journey was run end to end seven times before publishing. Each rule in it exists because a run broke without it:
 
-- **Auto-merge before review merged unreviewed code.** A pull request merged four minutes before Copilot's review posted four real findings. Hence: wait for the review, and require conversation resolution.
-- **Review rounds multiplied.** Every push started a new review, and each round found something in the last fix. Three rounds on one pull request cost more than the implementation. Hence: one round, one push.
-- **Agents edit tests when stuck.** Autopilot started a second pass that changed two tests after the first pass refused to. Both edits happened to be right, but only the diff gate showed they happened.
-- **Agents game gates.** One couldn't satisfy an infrastructure rule, so it added a metadata field containing the expected text. The gate now checks only deployable resources.
-- **Local fakes hide production bugs.** gpt-5-mini rejected `max_tokens`, a SQL date was bound as a string, and a schema change shipped before its column existed. None of them showed up with the fake AI and the in-memory store. Hence: boundary tests and Verify Before Merge.
-- **Cleanup must survive failure.** The deployment hook left a temporary SQL firewall rule open twice, once from an unsupported flag and once from a crash right after creating it.
-- **Timing matters for the cloud agent.** An issue assigned before Phase 2 merged made the agent rebuild the iOS app, and every Swift file conflicted.
-- **Building the whole iOS app took longest.** The green phase ran 48 to 88 minutes. Hence: a starter app with everything except the detail screen.
-- **Review time added up.** Triage took 15 to 30 minutes on each stack layer. Hence: one full review loop in Phase 1, and gates alone for Phases 2 and 3.
-- **A fix renamed a live resource.** A reviewer flagged an App Service plan name that could exceed 40 characters. The first fix changed the name for every environment, and the redeploy created a second plan next to the running one. Hence: never rename a deployed resource, and read the preview for an unexpected `Create`.
-- **One SQL batch hid a schema bug until deployment.** The API sent every migration and seed insert as one batch, so the seed's new column failed to compile before the migration that adds it could run, and the whole API returned 404. Every local test passed; Verify Before Merge caught it. Hence: one request per migration, and connect to the database on the first request, not while the module loads.
-- **Merging the bottom layer early broke the stack.** The next layer's pull request moved to `main`, got an unplanned Copilot review, and GitHub couldn't create the stack because its bottom pull request was already merged. Hence: merge the whole stack once, from the top.
-- **A lazy form hid the UI test's target.** The detail screen was a SwiftUI `Form`, which only builds the rows on screen. After the due-date controls pushed the steps down, the UI test failed about one CI run in eight and never locally. Hence: a `ScrollView` for the detail screen, and 10-second waits.
-- **Plan mode blocks writes.** `/fleet` launched while the session was still in plan mode; three subagents designed everything and wrote nothing.
-- **SQL rejected the Entra administrator when a service principal deployed.** On the Windows runner, `azd up` failed with `Invalid value given for parameter Login` for the SQL server's Microsoft Entra administrator. The "When something fails" prompt fixed the Bicep and kept Entra-only authentication, and the verifier passed against Azure. Hence: check the service principal row in [Environment Preparation](./PLAN-phase3-azure.md#environment-preparation) when a pipeline deploys.
-- **A hook query was blocked on Windows.** The post-provision hook passed a JMESPath query with `starts_with(...)` to `az`, and the Windows launcher rejects parentheses for `.cmd` programs. Hence: filter in JavaScript after a plain `az ... -o json`.
-- **The preview rejected a storage account name.** A generated Bicep named it `stsmart-<token>`, and storage account names can't contain hyphens. The offline gate passed because it didn't check names. Hence: a gate rule for storage account names.
-- **Every test passed, and the API returned 404 for every route.** On a Windows run, compiled code imported `../data/dataStoreFactory` without a `.js` extension. Vitest resolves that, but Node.js doesn't, so the Functions host loaded no functions. Hence: `NodeNext` module settings, which make `tsc` reject the mistake, and a load check in `npm run check`.
-- **Green stopped on tests that couldn't pass.** Five red tests used fakes that production code couldn't work with, such as a database pool without the method the code calls. The green agent refused to edit them, as it should. Hence: the red-fix prompt in Phase 1 Step 3, and a red-phase rule that fakes must do what production code needs.
-- **The cloud agent lost its work to the clock.** It committed red and green, then ran its own validation round after round and hit the 30-minute session limit before pushing. Nothing but the plan commit survived. Hence: the agent pushes as soon as green passes and runs one validation round.
-- **The agent can't wait for an approval.** With **Require approval for workflow runs** on, the agent ended its session while CI waited for a person, so it never saw a failing `ios` check. Hence: the setting is a gate in Phase 4 Step 1.
+- **Agents bend tests and gates when stuck.** Autopilot changed two tests after a first pass refused to, and one agent added a metadata field with the text that an infrastructure rule expected. Five red tests also used fakes that production code couldn't use, so green stopped. Hence: the red-tag diff gates, a gate that checks only deployable resources, and the red-fix prompt.
+- **Local fakes hide production bugs.** gpt-5-mini rejected `max_tokens`, a SQL date was bound as a string, one SQL batch ran a seed before the migration it needed, and an import without a `.js` extension passed every test but loaded no functions. Hence: boundary tests, `NodeNext` with a load check in `npm run check`, and Verify Before Merge.
+- **Review costs add up.** Auto-merge merged a pull request four minutes before Copilot's review posted real findings. Each extra review round found something in the last fix, and triage took 15 to 30 minutes on each layer. Hence: auto-merge only after the review, one round with one push, and a full review loop only in Phase 1.
+- **Stacks merge once, from the top.** Merging the bottom layer early moved the next pull request to `main`, started an unplanned review, and broke the stack.
+- **Azure rejects what offline checks miss.** A storage account name had a hyphen, a fix renamed a live App Service plan and created a second one, and SQL rejected the Entra administrator that a service principal set. Hence: a name rule in the gate, never renaming deployed resources, and the service principal row in [Environment Preparation](./PLAN-phase3-azure.md#environment-preparation).
+- **Deployment scripts must survive failure and Windows.** The hook left a temporary SQL firewall rule open twice, and the Windows launcher rejected a JMESPath query with parentheses. Hence: cleanup in `finally`, and JSON filtered in JavaScript.
+- **UI work needs a head start and stable tests.** Building the whole iOS app took 48 to 88 minutes, and a lazy SwiftUI `Form` made the UI test fail about one CI run in eight. Hence: a starter app, a `ScrollView`, and 10-second waits.
+- **The cloud agent needs time and feedback.** Assigned before Phase 2 merged, it rebuilt the iOS app. It ended its session while CI waited for approval, and once hit its 30-minute limit before it pushed. Hence: assign after the stack merges, turn off workflow approval, and push as soon as green passes.
 
 </details>
 

@@ -6,7 +6,7 @@
   <img src="./images/smart-todo-hero.webp" alt="SmartTodo — AI-Powered Task Breakdown" width="800" />
 </p>
 
-You'll build SmartTodo, an iPhone app that turns a todo such as "Prepare conference talk" into steps you can check off. The API runs on Azure Functions, Azure SQL stores the data, and gpt-5-mini on Microsoft Foundry writes the steps. The API uses managed identity for every Azure service, so it stores no keys or passwords.
+You'll build SmartTodo, an iPhone app that turns a todo such as "Prepare conference talk" into steps you can check off. The API runs on Azure Functions, Azure SQL stores the data, and gpt-5-mini on Microsoft Foundry writes the steps. The API connects to Azure SQL, storage, and Foundry with managed identity, so it stores no passwords or API keys.
 
 Deploying is the easy part for an agent. Getting a result worth deploying is the hard part. So you won't paste large prompts and watch. You'll make the decisions, review the tests, and let commands with exit codes, not the agent's opinion, decide when work is done. At the end, you'll turn that loop into a factory that delivers the next feature from a GitHub issue.
 
@@ -641,7 +641,9 @@ gh stack sync --prune
 
 ```text
 git tag -d phase1-red phase2-red phase3-red
-``` From now on, every pull request that changes `src/api` or `infra` also passes [Verify Before Merge](./PLAN.md#verify-before-merge): deploy the branch, run the verifier, and paste the `PASS` line.
+```
+
+From now on, every pull request that changes `src/api` or `infra` also passes [Verify Before Merge](./PLAN.md#verify-before-merge): deploy the branch, run the verifier, and paste the `PASS` line.
 
 ---
 

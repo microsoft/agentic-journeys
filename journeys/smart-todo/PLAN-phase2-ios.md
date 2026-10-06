@@ -202,7 +202,7 @@ The fake generator always returns four steps, so check that seven steps stay rea
 
 **Wait at least 10 seconds.** Give every `waitForExistence` and `XCTWaiter` in a UI test a timeout of at least 10 seconds. GitHub's macOS runners are much slower than a Mac, and a 2- or 3-second wait made the UI test fail about one run in eight in CI while passing every time locally. A wait that succeeds returns immediately, so the longer timeout costs nothing when the app is fast.
 
-**Red phase:** Add only the stub types the tests need to compile, such as a `TodoDetailViewModel` whose methods do nothing. Commit the tests and tag the commit `phase2-red`. When review findings add tests later, commit them as a new red commit and move the tag with `git tag -f phase2-red`.
+**Red phase:** Add only the stub types the tests need to compile, such as a `TodoDetailViewModel` whose methods do nothing. Commit the tests and tag the commit `phase2-red`. When review findings add tests later, the human deletes the tag, and the agent commits the tests as a new red commit and tags it `phase2-red` again.
 
 ## Quality Gate
 

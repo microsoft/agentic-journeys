@@ -6,17 +6,17 @@
   <img src="./images/smart-todo-hero.webp" alt="SmartTodo — AI-Powered Task Breakdown" width="800" />
 </p>
 
-You'll build SmartTodo, an iPhone app that turns a todo such as "Prepare conference talk" into steps you can check off. The API runs on Azure Functions, Azure SQL stores the data, and gpt-5-mini on Microsoft Foundry writes the steps.
+You'll build SmartTodo, an iPhone app that turns a todo such as "Prepare conference talk" into steps you can check off. The API runs on Azure Functions, Azure SQL stores the data, and gpt-5-mini on Microsoft Foundry writes the steps. The API uses managed identity for every Azure service, so it stores no keys or passwords.
 
 Deploying is the easy part for an agent. Getting a result worth deploying is the hard part. So you won't paste large prompts and watch. You'll make the decisions, review the tests, and let commands with exit codes, not the agent's opinion, decide when work is done. At the end, you'll turn that loop into a factory that delivers the next feature from a GitHub issue.
 
 ## Learning Objectives
 
 - Turn an architecture diagram into GitHub issues, and settle ambiguous requirements in a plan interview (`grill-plan`) before any code exists
-- Drive an agent with red/green test-driven development (`tdd-builder` and `/autopilot`), and prove it didn't change the tests
+- Drive an agent with red/green test-driven development (`tdd-builder` and autopilot), stop it from changing the tests with a hook, and prove it with a diff
 - Gate every phase with commands that pass or fail: unit and contract tests, a black-box API verifier, iOS UI tests, an infrastructure check, and a deploy-and-verify step before risky pull requests merge
 - Ship dependent work as a stack of pull requests with GitHub Stacked PRs (`gh stack`), required checks, and Copilot code review
-- Review the architecture's cost with an agent, then deploy Azure Functions, Azure SQL with managed identity, and Microsoft Foundry with `azd`
+- Review the architecture's cost with an agent, then deploy Azure Functions, Azure SQL, and Microsoft Foundry with `azd`, using managed identity instead of keys
 - Capture what worked as a skill, a script that needs no AI, and a Copilot cloud agent setup that builds the next feature
 
 > 💰 **Estimated Cost**: ~$10–30/month while the Azure resources exist, mostly Azure SQL and AI tokens, plus about 2,000–2,500 Copilot AI credits for the whole journey. Phases 0 to 2 create no Azure resources. Plan on 3–4 hours across a few sessions. About an hour and a half of that is Phase 4, mostly waiting for the cloud agent and CI, and you can [start at any phase](#short-on-time-start-at-a-later-phase). See [Cost Breakdown](#cost-breakdown), and run [Cleanup](#cleanup) when you finish.
@@ -71,10 +71,10 @@ Phase 0 Step 1 creates your workspace with a script. Then do these steps in your
 
 | First steps | Copilot CLI | Copilot app |
 | --- | --- | --- |
-| 1. Open the workspace | `cd ../smart-todo-workspace/journeys/smart-todo`, then `copilot`. Trust the folder when Copilot asks. | Select **+** next to **Projects**, select **Open folder**, and choose `smart-todo-workspace`. |
+| 1. Open the workspace | `cd ../smart-todo-workspace/journeys/smart-todo`, then `copilot`. Trust the folder when Copilot asks: Copilot runs the repository's hook only in a trusted folder. | Select **+** next to **Projects**, select **Open folder**, and choose `smart-todo-workspace`. |
 | 2. Start a session | Done in step 1. | Start a session in the project and select **Current checkout**, not **New worktree**. |
 | 3. Set the working folder | Done in step 1. | Send this prompt first: `Work in journeys/smart-todo. Paths in my prompts are relative to it.` |
-| 4. Confirm the agent and skill | Run `/env`. It lists the `tdd-builder` agent and the `grill-plan` skill. | Open **Customize** → **Skills** and filter on **Project** to find `grill-plan`. Find `tdd-builder` in the agent picker below the prompt box. |
+| 4. Confirm the agent, skill, and hook | Run `/env`. It lists the `tdd-builder` agent, the `grill-plan` skill, and the `tdd-guard` hook. | Open **Customize** → **Skills** and filter on **Project** to find `grill-plan`. Find `tdd-builder` in the agent picker below the prompt box. |
 
 Use this table to find each feature that the guide uses:
 
@@ -101,7 +101,7 @@ For another agentic coding tool, run: **"Copy or adapt this repository's `.githu
 ## Architecture
 
 <p align="center">
-  <img src="./images/architecture.png" alt="SmartTodo architecture: a SwiftUI iPhone app calls an Azure Functions API that uses Azure SQL through managed identity, Microsoft Foundry gpt-5-mini through an API key, a storage account, and Application Insights with Log Analytics" width="900" />
+  <img src="./images/architecture.png" alt="SmartTodo architecture: a SwiftUI iPhone app calls an Azure Functions API that uses Azure SQL through managed identity, Microsoft Foundry gpt-5-mini through managed identity, a storage account, and Application Insights with Log Analytics" width="900" />
 </p>
 
 Phase 3 deploys the backend in the diagram to one resource group. `azd` doesn't deploy the iPhone app: you run it in the simulator or on a device and point it at the deployed API.
@@ -152,6 +152,7 @@ Each of these tools does a job you'd otherwise do by hand:
 | GitHub | Rulesets, CI, and Copilot code review | Block the merge until the checks pass and the review threads are resolved |
 | GitHub | Stacked pull requests (`gh stack`) | Keep three dependent phases reviewable as separate pull requests |
 | GitHub | Copilot cloud agent with `copilot-setup-steps.yml` | Delivers a feature from an issue in its own sandbox, through the same gates |
+| Your repository | `tdd-guard` hook and `copilot-instructions.md` | Block changes to frozen tests, and give every session the same rules |
 | Your repository | Skills, scripts, and an agentic workflow | Turn what worked into something repeatable, then automatic |
 
 Prompts that say "Use the tdd-builder agent" or "Use the grill-plan skill" load them from `.github/agents` and `.github/skills`. SmartTodo itself uses AI too: gpt-5-mini breaks each goal into steps, with an explicit output format and defensive parsing.
@@ -166,7 +167,7 @@ Prompts that say "Use the tdd-builder agent" or "Use the grill-plan skill" load 
 
 Each pull request shows only its own phase's changes, and you can start the next phase while the last one is in review. `gh stack` creates the layers, opens their pull requests, and merges them. Phase 4 uses ordinary pull requests.
 
-**Each red phase is tagged** (`phase1-red`, `phase2-red`, `phase3-red`), and each green gate runs `git diff --exit-code <tag>` on the tests. If that diff fails, the agent changed a test, so read it. If the test was wrong, commit only the test change as a new red commit, move the tag with `git tag -f <tag>`, and commit the code as green. If the test was right, restore it with `git checkout <tag> -- <file>` and ask the agent to fix the code.
+**Each red phase is tagged** (`phase1-red`, `phase2-red`, `phase3-red`). While a tag exists, a Copilot hook ([TDD Guard](./PLAN.md#tdd-guard)) blocks the agent from changing the tests it protects, and from moving or deleting the tag. Only you unlock the tests: before a prompt that must change tests, run `git tag -d <tag>` in a terminal, and the agent tags its new red commit again. The hook can't check every shell command, so each green gate also runs `git diff --exit-code <tag>` on the tests. If that diff fails, the agent changed a test, so read it. If the test was wrong, commit only the test change as a new red commit, move the tag with `git tag -f <tag>`, and commit the code as green. If the test was right, restore it with `git checkout <tag> -- <file>` and ask the agent to fix the code.
 
 Steps marked 🐙 use GitHub.com features and need your own repository.
 
@@ -219,7 +220,7 @@ The app gets its own workspace and GitHub repository, so this repository stays u
 node journeys/smart-todo/setup/setup.mjs
 ```
 
-It copies the journey into `../smart-todo-workspace`, commits it, creates a public `smart-todo` repository with CI, protects `main` with a ruleset, and waits for the first CI run. Add `--private` for a private repository (rulesets there need GitHub Pro, Team, or Enterprise), `--no-copilot-review` if your plan doesn't include Copilot code review (see [Prerequisites](#prerequisites)), or `--start-at <phase>` to [start at a later phase](#short-on-time-start-at-a-later-phase). `--help` lists every option.
+It copies the journey into `../smart-todo-workspace`, adds the TDD Guard hook and starter Copilot instructions (`.github/copilot-instructions.md`), commits it, creates a public `smart-todo` repository with CI, protects `main` with a ruleset, and waits for the first CI run. Add `--private` for a private repository (rulesets there need GitHub Pro, Team, or Enterprise), `--no-copilot-review` if your plan doesn't include Copilot code review (see [Prerequisites](#prerequisites)), or `--start-at <phase>` to [start at a later phase](#short-on-time-start-at-a-later-phase). `--help` lists every option.
 
 **Gate:** The script ends with `Ruleset: active` and `CI on main: success`.
 
@@ -296,12 +297,12 @@ cd ../..
 
 The failures must be assertions or `Not implemented` errors. Import or compile errors mean the red phase isn't done, so ask the agent to fix the setup.
 
-**🔍 Review the tests, not code.** Read the Requirement → Test table the agent printed. Every interview decision needs a test, boundaries need both sides (500 characters passes, 501 fails), and fixtures must make sense: a pending todo whose only step is checked becomes `completed`, not `in_progress`. If something is wrong, fix it now, while it's cheap:
+**🔍 Review the tests, not code.** Read the Requirement → Test table the agent printed. Every interview decision needs a test, boundaries need both sides (500 characters passes, 501 fails), and fixtures must make sense: a pending todo whose only step is checked becomes `completed`, not `in_progress`. If something is wrong, fix it now, while it's cheap. The tag froze the tests, so unlock them first with `git tag -d phase1-red` in a terminal:
 
 ```
 > The Decision Point 3 test gives the todo only one step, so completing it
   triggers auto-completion. Give the todo two steps and complete only the
-  first. Keep it red. Amend the red commit and move the phase1-red tag.
+  first. Keep it red. Amend the red commit and tag it phase1-red again.
 ```
 
 **💡 What you're learning:** You're reviewing around forty test names instead of a thousand lines of generated code. A misunderstanding caught in a test name costs one sentence to fix.
@@ -316,13 +317,13 @@ Autopilot keeps working until the objective is met. In the app, select **Autopil
   change anything under src/api/test. Commit the result as a green commit.
 ```
 
-If the agent stops and says a red test can't pass, that's the rule working: it won't edit tests. Read each test it names. If you agree a test is wrong, fix it as a new red commit:
+If the agent stops and says a red test can't pass, that's the rule working: it won't edit tests, and the hook blocks it if it tries. Read each test it names. If you agree a test is wrong, run `git tag -d phase1-red` in a terminal, then fix the test as a new red commit:
 
 ```
 > Fix only the red tests you reported as impossible to pass, one change per
-  test, and commit them as a new red commit. Move the tag with
-  git tag -f phase1-red. Then finish the green phase with the tdd-builder
-  agent until "npm run check" passes, and commit it as green.
+  test, commit them as a new red commit, and tag it phase1-red. Then finish
+  the green phase with the tdd-builder agent until "npm run check" passes,
+  and commit it as green.
 ```
 
 <details>
@@ -375,14 +376,14 @@ Leave the API running for Phase 2. After a later fix to Phase 1, run `git checko
   security, and contract issues.
 ```
 
-Decide what to do with each finding, then hand it back in the same session, so the agent still has the findings:
+Decide what to do with each finding. If a fix needs a test, unlock the tests with `git tag -d phase1-red`. Then hand the findings back in the same session, so the agent still has them:
 
 ```
 > Triage these /review findings with the "Review Triage" section of
   PLAN.md: fix <numbers>, file <number> as a known-limitation issue.
 ```
 
-The agent writes each fix as a new red commit (moving the `phase1-red` tag), then a green commit. For a second opinion, run `/rubber-duck`.
+The agent writes each fix as a new red commit, tags it `phase1-red`, then writes a green commit. For a second opinion, run `/rubber-duck`.
 
 ### Step 6: Ship through the gate 🐙
 
@@ -392,7 +393,7 @@ The agent writes each fix as a new red commit (moving the `phase1-red` tag), the
   close #<api-issue> and include the gate results. Don't merge it.
 ```
 
-Watch the checks with `gh pr checks --watch`, or in the app's **Pull requests** view. Copilot code review posts one review a few minutes after the pull request opens (`gh pr view --json reviews`). Wait for it: its comments only block the merge once they exist. Start Phase 2 in the meantime. When the review arrives, read it, then hand it to the agent between Phase 2 prompts, not while one is running, because both work in the same checkout:
+Watch the checks with `gh pr checks --watch`, or in the app's **Pull requests** view. Copilot code review posts one review a few minutes after the pull request opens (`gh pr view --json reviews`). Wait for it: its comments only block the merge once they exist. Start Phase 2 in the meantime. When the review arrives, read it, run `git tag -d phase1-red` if a fix needs a test, then hand it to the agent between Phase 2 prompts, not while one is running, because both work in the same checkout:
 
 ```
 > Handle the Copilot code review on pull request #<pr-number> with the
@@ -636,7 +637,11 @@ gh stack merge <pr-number> --yes --squash
 gh stack sync --prune
 ```
 
-`gh stack merge` lands this pull request and every layer below it, each as its own squash commit on `main`, and merges nothing unless every layer meets every rule. `gh pr merge` and auto-merge can't merge stack layers. `gh stack sync --prune` then deletes the merged branches. From now on, every pull request that changes `src/api` or `infra` also passes [Verify Before Merge](./PLAN.md#verify-before-merge): deploy the branch, run the verifier, and paste the `PASS` line.
+`gh stack merge` lands this pull request and every layer below it, each as its own squash commit on `main`, and merges nothing unless every layer meets every rule. `gh pr merge` and auto-merge can't merge stack layers. `gh stack sync --prune` then deletes the merged branches. The red tags have done their job, so delete them, or the hook keeps those tests frozen in Phase 4:
+
+```text
+git tag -d phase1-red phase2-red phase3-red
+``` From now on, every pull request that changes `src/api` or `infra` also passes [Verify Before Merge](./PLAN.md#verify-before-merge): deploy the branch, run the verifier, and paste the `PASS` line.
 
 ---
 
@@ -657,8 +662,8 @@ git switch -c phase-4-factory
 ### Step 1: Write down the definition of done
 
 ```
-> Create .github/copilot-instructions.md and
-  .github/workflows/copilot-setup-steps.yml as described in the "Definition
+> Add the definition of done to .github/copilot-instructions.md, and create
+  .github/workflows/copilot-setup-steps.yml, as described in the "Definition
   of Done" and "Cloud Agent Environment" sections of PLAN-phase4-factory.md.
   Open a pull request. Don't enable auto-merge.
 ```
@@ -709,11 +714,12 @@ Merge any small change and watch the release run end with the verifier's `PASS` 
 | --- | --- |
 | Broke the architecture into work | Issues and sub-issues |
 | Decided the ambiguous parts | The `grill-plan` skill and each plan's Decision Points |
-| Wrote tests first and kept them fixed | The `tdd-builder` custom agent |
+| Wrote tests first and kept them fixed | The `tdd-builder` custom agent and the `tdd-guard` hook |
 | Checked that it works | `ci.yml` gates and the checked-in verifier |
 | Kept dependent work reviewable | A stack of pull requests (`gh stack`) |
 | Checked that it's safe to merge | The ruleset, Copilot code review, and `gh stack merge` or auto-merge |
 | Set up the agent's machine | `copilot-setup-steps.yml` |
+| Told every session the rules | `.github/copilot-instructions.md` |
 | Remembered how to deploy | The infrastructure skill, `scaffold-infra.mjs`, and `check-infra.mjs` |
 | Deployed | `release.yml` (optional) |
 
@@ -753,6 +759,8 @@ The next step is a factory that runs without anyone starting it. This repository
 | A pull request shows "no checks reported" | It conflicts with `main`, and GitHub doesn't run workflows on a conflicting pull request. Merge `origin/main`, resolve, and push (or ask `@copilot` to). |
 | Checks never start on the cloud agent's pull request, or its last comment says CI is blocked or `action_required` | The run waits for approval, and the agent ended its session before it could read the result. Turn off **Require approval for workflow runs** (Settings → Copilot → Cloud agent), approve with `gh run rerun <run-id>`, and paste any failing check's error line in one `@copilot` comment. |
 | The cloud agent's pull request has only a plan commit, and its session ended | The session hit its time limit (30 minutes by default) before pushing, so its other commits are gone. Check the "Running Copilot cloud agent" run log for `The operation was canceled`. Close the pull request, unassign `copilot-swe-agent[bot]`, and assign the issue again. |
+| The agent says the TDD guard blocked a change | A red tag froze those tests. In a green phase, the guard did its job. If the change is right, run `git tag -d <tag>` in a terminal and repeat the prompt. In Phase 4, delete any red tags that are left. |
+| The TDD guard never blocks anything | Copilot CLI runs repository hooks only in a trusted folder. Restart `copilot` in the workspace, trust the folder, and check that `/env` lists the hook. |
 | Green stops and says a red test can't pass | The agent is following its rule not to edit tests. Read the tests it names; if you agree, use the red-fix prompt in [Phase 1 Step 3](#step-3-green-let-the-agent-make-them-pass). |
 | `gh pr merge` or auto-merge fails on a stack layer | Stack layers merge with `gh stack merge <pr-number> --yes --squash`, which also merges the unmerged layers below it. |
 | A layer shows "needs rebase", or the stack merge reports a non-linear history | A lower layer or `main` moved. Run `gh stack sync`, or `gh stack rebase` and then `gh stack push`. On a conflict, resolve it and run `gh stack rebase --continue`. |
@@ -766,7 +774,7 @@ The next step is a factory that runs without anyone starting it. This repository
 | Functions finds no functions locally | `"main"` in `package.json` must be `"dist/functions/*.js"`, and run `npm run build` before `func start`. |
 | Functions logs `Worker was unable to load entry point` with `ERR_MODULE_NOT_FOUND`, and every route returns 404 | A relative import is missing its `.js` extension. Tests pass because Vitest resolves it; Node.js doesn't. Set `module` and `moduleResolution` to `NodeNext`, add the extensions, and rebuild ([Data Access Layer](./PLAN-phase1-api.md#data-access-layer), "ES modules"). |
 | The Function App returns 500 on database calls | The managed identity lacks database access, or `AZURE_SQL_SERVER` isn't the full `<sql-name>.database.windows.net` name. Rerun `node infra/hooks/postprovision.js` as the Microsoft Entra administrator. |
-| AI step generation returns 503 in Azure | Check that `AI_PROVIDER=foundry` and the `AZURE_AI_*` settings exist (without printing values), and that the request uses `max_completion_tokens`, not `max_tokens`. |
+| AI step generation returns 503 in Azure | Right after the first deployment, the AI role assignment can take up to 10 minutes to apply, so wait and rerun the verifier. Then check that `AI_PROVIDER=foundry` and the `AZURE_AI_ENDPOINT` and `AZURE_AI_DEPLOYMENT` settings exist, that the Function App's system-assigned identity has **Cognitive Services OpenAI User** on the Foundry account, and that the request uses `max_completion_tokens`, not `max_tokens`. |
 | A soft-deleted Cognitive Services account blocks redeployment | `az cognitiveservices account list-deleted`, then `az cognitiveservices account purge --name <name> --resource-group <rg> --location <location>`. |
 | `azd deploy` fails during the Oryx TypeScript build | Don't exclude `src/` or `tsconfig.json` in `.funcignore`, and remove `azure-functions-core-tools` from `package.json` if the agent added it; `func` is a host tool. |
 | The iOS app can't reach the API | Locally, the API must run on `localhost:7071`. For Azure, `Config.apiBaseURL` must match `azd env get-value API_URL`, use `https://`, and have no trailing slash. |
@@ -809,7 +817,7 @@ Remove the API worktree with `git worktree remove ../../../smart-todo-api`. If y
 
 This journey was run end to end seven times before publishing. Each rule in it exists because a run broke without it:
 
-- **Agents bend tests and gates when stuck.** Autopilot changed two tests after a first pass refused to, and one agent added a metadata field with the text that an infrastructure rule expected. Five red tests also used fakes that production code couldn't use, so green stopped. Hence: the red-tag diff gates, a gate that checks only deployable resources, and the red-fix prompt.
+- **Agents bend tests and gates when stuck.** Autopilot changed two tests after a first pass refused to, and one agent added a metadata field with the text that an infrastructure rule expected. Five red tests also used fakes that production code couldn't use, so green stopped. Hence: the red-tag diff gates and the TDD guard hook, a gate that checks only deployable resources, and the red-fix prompt.
 - **Local fakes hide production bugs.** gpt-5-mini rejected `max_tokens`, a SQL date was bound as a string, one SQL batch ran a seed before the migration it needed, and an import without a `.js` extension passed every test but loaded no functions. Hence: boundary tests, `NodeNext` with a load check in `npm run check`, and Verify Before Merge.
 - **Review costs add up.** Auto-merge merged a pull request four minutes before Copilot's review posted real findings. Each extra review round found something in the last fix, and triage took 15 to 30 minutes on each layer. Hence: auto-merge only after the review, one round with one push, and a full review loop only in Phase 1.
 - **Stacks merge once, from the top.** Merging the bottom layer early moved the next pull request to `main`, started an unplanned review, and broke the stack.
@@ -827,7 +835,7 @@ This journey was run end to end seven times before publishing. Each rule in it e
 1. **Improve the AI through the factory.** Write an issue asking for time estimates in each generated step, and assign it to the cloud agent. How did the agent test a prompt change without calling the real model?
 2. **Try a different model.** Switch the Foundry deployment to gpt-4.1, generate steps for the same todo with each model, and compare quality and latency.
 3. **Observe the app.** Ask Copilot to query Application Insights for request counts, failures, and the slowest endpoint over the last hour, and to show the KQL it used.
-4. **Harden security.** Pick one: move `AZURE_AI_KEY` to Key Vault, switch AI to managed identity, add rate limiting to `generate-steps`, or require a function key. Each change starts with a plan update and a failing test. See [Production Hardening](./PLAN.md#production-hardening-out-of-scope).
+4. **Harden security.** Pick one: add rate limiting to `generate-steps`, require a function key or Microsoft Entra sign-in for the API, or move the storage account and SQL server behind private endpoints. Each change starts with a plan update and a failing test. See [Production Hardening](./PLAN.md#production-hardening-out-of-scope).
 
 ---
 

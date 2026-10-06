@@ -354,7 +354,6 @@ function checkContract(template) {
     'AI_PROVIDER',
     'AZURE_AI_ENDPOINT',
     'AZURE_AI_DEPLOYMENT',
-    'AZURE_AI_KEY',
     'AZURE_SQL_SERVER',
     'AZURE_SQL_DATABASE',
     'AZURE_SQL_CLIENT_ID',
@@ -370,6 +369,23 @@ function checkContract(template) {
   requireCondition(
     !hasSetting(entries, 'FUNCTIONS_WORKER_RUNTIME'),
     'FUNCTIONS_WORKER_RUNTIME app setting is forbidden',
+  );
+  requireCondition(
+    !hasSetting(entries, 'AZURE_AI_KEY'),
+    'AZURE_AI_KEY app setting is forbidden: AI access is keyless',
+  );
+  requireCondition(
+    entries.every((entry) => !/listKeys/i.test(JSON.stringify(entry.value ?? ''))),
+    'app settings must not read keys with listKeys()',
+  );
+  const localAuthValues = bodies.flatMap((body) => valuesForKey(body, 'disableLocalAuth'));
+  requireCondition(
+    localAuthValues.some((value) => value === true),
+    'the Foundry account must set disableLocalAuth to true',
+  );
+  requireCondition(
+    localAuthValues.every((value) => value === true || (typeof value === 'string' && value.startsWith('['))),
+    'literal disableLocalAuth must be true',
   );
 
   requireCondition(
@@ -512,6 +528,7 @@ function checkContract(template) {
   for (const roleDefinitionId of [
     'b7e6dc6d-f1e8-4753-8033-0f276bb0955b',
     'ba92f5b4-2d11-453d-a403-e96b0029c9fe',
+    '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd',
   ]) {
     requireCondition(
       strings.some((value) =>

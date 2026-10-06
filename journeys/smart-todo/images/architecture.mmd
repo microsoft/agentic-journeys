@@ -1,0 +1,36 @@
+---
+# Render: npx -p @mermaid-js/mermaid-cli mmdc -i architecture.mmd -o architecture.png -s 4.4 -b white
+config:
+  theme: default
+  look: classic
+  layout: elk
+  flowchart:
+    wrappingWidth: 320
+    nodeSpacing: 60
+    rankSpacing: 140
+  themeVariables:
+    fontSize: 20px
+---
+flowchart LR
+  subgraph iPhone
+    app["SwiftUI app<br/>list · detail · action steps"]
+  end
+  subgraph rg["Azure resource group"]
+    subgraph func["Azure Functions (Flex Consumption)"]
+      api["SmartTodo REST API<br/>Node.js + TypeScript"]
+    end
+    sql["Azure SQL Database<br/>Todos + ActionSteps"]
+    ai["Microsoft Foundry<br/>gpt-5-mini task decomposition"]
+    storage["Storage account<br/>runtime + deployment package"]
+    insights["Application Insights"]
+    logs["Log Analytics"]
+  end
+  app -- "HTTPS JSON" --> api
+  api -- "managed identity" --> sql
+  api -- "managed identity · /openai/v1/" --> ai
+  api -- "managed identity" --> storage
+  api -- "telemetry" --> insights
+  insights --> logs
+  style iPhone fill:#f4f4f4,stroke:#333
+  style rg fill:#e8f3fc,stroke:#1f8ad2
+  style func fill:#f0f8ff,stroke:#7fdbff

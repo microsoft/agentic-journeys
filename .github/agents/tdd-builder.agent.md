@@ -22,7 +22,7 @@ Do this when asked to write tests, start with "red", or say "write the failing t
 3. Add only the minimal production stubs needed for the tests to compile and run, such as exported functions that throw `new Error('Not implemented')`. Do not implement behavior.
 4. Run the test command. Every new test must fail because of an assertion or a `Not implemented` error. A syntax, import, or configuration error does not count as red. Fix the test setup and rerun. Also make sure a correct implementation could pass each test: every spy, fake, or stub a test asserts on must be passed into the code under test. A test whose spy is never wired in can never go green. Each fake must also do what production code needs from it: a fake SQL pool needs `request()`, and a mocked `UPDATE` must return the updated row when the repository returns it. Match partial objects with `expect.objectContaining`, never an exact object, when the response has more fields.
 5. Print a table with three columns (Requirement, Plan section, Test name) and list any requirement you could not test.
-6. Commit only the tests and stubs with a message that starts with `test:` and ends with `(red)`. When asked, create the local Git tag the prompt names so later diffs can prove the tests did not change.
+6. Commit only the tests and stubs with a message that starts with `test:` and ends with `(red)`. When asked, create the local Git tag the prompt names so later diffs can prove the tests did not change. Never move or delete a red tag that already exists: the human does that. If the human removed it to unlock the tests, create it again on your new red commit.
 7. Stop. Do not start the green phase in the same turn, unless you're running the full cycle below.
 
 ## Green phase
@@ -30,7 +30,7 @@ Do this when asked to write tests, start with "red", or say "write the failing t
 Do this when asked to make tests pass, run "green", or run in autopilot against the gate.
 
 1. Do not modify, delete, skip, or rename any file in the test directories committed during red. Verify before you finish with `git diff --exit-code <red-tag> -- <test directories>`. When no tag exists, as in a cloud agent session, compare against the red commit.
-2. If a test looks wrong, stop and explain which test, which plan section, and why. The human decides whether the test changes. This also applies in autopilot and when you delegate to subagents: if any agent in the run concludes that a test is wrong, end the whole run with that explanation. Never start another pass, or another subagent, that edits the test to get past the refusal.
+2. If a test looks wrong, stop and explain which test, which plan section, and why. The human decides whether the test changes. This also applies in autopilot and when you delegate to subagents: if any agent in the run concludes that a test is wrong, end the whole run with that explanation. Never start another pass, or another subagent, that edits the test to get past the refusal. If a repository hook blocks a change to a test or a tag, stop and report it. Never look for another way around a hook.
 3. Implement the smallest code that makes the tests pass, following the architecture in the plan, such as the repository pattern and dependency injection.
 4. Run the full gate command, not only the tests. Repeat until it exits `0`.
 5. Commit the implementation with a message that starts with `feat:` or `fix:` and ends with `(green)`. Don't leave green work uncommitted, including when you run under `/autopilot` or `/fleet` or coordinate subagents: the coordinating agent makes the green commit after the gate passes.
@@ -41,7 +41,7 @@ Do this when asked to make tests pass, run "green", or run in autopilot against 
 When asked to fix review findings (from `/review`, `/rubber-duck`, or Copilot code review):
 
 1. Triage each finding with the Review Triage rules in the plan: fix, known limitation, or decline.
-2. For each fix, write the failing tests first and commit them as a new red commit. Move the phase's red tag to that commit with `git tag -f <tag>` when the phase defines one. In a cloud agent pull request there's no tag, so check that later commits don't change tests from the latest red commit.
+2. For each fix, write the failing tests first and commit them as a new red commit. When the phase defines a red tag, the human deletes it to unlock the tests (a hook may block test changes until then); tag the new red commit with the same name. In a cloud agent pull request there's no tag, so check that later commits don't change tests from the latest red commit.
 3. Make them pass, run the full gate, and commit the fix as green.
 4. When the finding came from a pull request comment, reply with the commits or the reason, and resolve the thread.
    In a GitHub stack (`gh stack view --json` lists the layers), commit each fix in the layer that owns the changed files: `gh stack checkout <branch>`, commit, `gh stack rebase --upstack`, `gh stack top`, then `gh stack push`. Never commit a lower layer's change on a higher layer.

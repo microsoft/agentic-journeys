@@ -8,7 +8,6 @@
     "AZURE_SQL_SERVER": "",
     "AZURE_SQL_DATABASE": "SmartTodo",
     "AZURE_AI_ENDPOINT": "",
-    "AZURE_AI_DEPLOYMENT": "gpt-5-mini",
-    "AZURE_AI_KEY": ""
+    "AZURE_AI_DEPLOYMENT": "gpt-5-mini"
   }
 }

@@ -1,3 +1,4 @@
+import { DefaultAzureCredential, getBearerTokenProvider, type TokenCredential } from '@azure/identity';
 import OpenAI from 'openai';
 import { AiServiceError, type GeneratedStep } from './contracts.js';
 import type { StepGenerator } from './contracts.js';
@@ -5,11 +6,14 @@ import { parseGeneratedSteps } from './parser.js';
 
 export interface FoundryGeneratorOptions {
   endpoint?: string;
-  apiKey?: string;
   deployment?: string;
+  credential?: TokenCredential;
   client?: CompletionClient;
+  fetch?: typeof fetch;
   timeoutMs?: number;
 }
+
+export const FOUNDRY_TOKEN_SCOPE = 'https://cognitiveservices.azure.com/.default';
 
 interface CompletionClient {
   chat: {
@@ -50,17 +54,21 @@ export function normalizeFoundryEndpoint(endpoint: string): string {
 
 export function createFoundryStepGenerator(options: FoundryGeneratorOptions = {}): StepGenerator {
   const endpoint = options.endpoint ?? process.env.AZURE_AI_ENDPOINT ?? '';
-  const apiKey = options.apiKey ?? process.env.AZURE_AI_KEY ?? '';
   const deployment = options.deployment ?? process.env.AZURE_AI_DEPLOYMENT ?? 'gpt-5-mini';
   const timeoutMs = options.timeoutMs ?? 30_000;
+  // Keyless: the Function App's managed identity (or your Azure CLI sign-in locally) gets a Microsoft Entra token.
   const client = options.client ?? (
-    endpoint && apiKey
-      ? new OpenAI({ baseURL: normalizeFoundryEndpoint(endpoint), apiKey })
+    endpoint
+      ? new OpenAI({
+          baseURL: normalizeFoundryEndpoint(endpoint),
+          apiKey: getBearerTokenProvider(options.credential ?? new DefaultAzureCredential(), FOUNDRY_TOKEN_SCOPE),
+          fetch: options.fetch,
+        })
       : undefined
   );
 
   async function attempt(title: string, retry: boolean): Promise<GeneratedStep[]> {
-    if (!client) throw new AiServiceError('Foundry endpoint and API key are required');
+    if (!client) throw new AiServiceError('AZURE_AI_ENDPOINT is required for the Foundry generator');
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {

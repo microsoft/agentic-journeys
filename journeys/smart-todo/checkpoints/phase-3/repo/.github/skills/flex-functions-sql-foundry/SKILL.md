@@ -50,17 +50,18 @@ compiled Bicep JSON into a new project.
 - Storage with shared-key access disabled, default network action `Allow`, and a
   `deploymentpackage` container.
 - Grant the Function App `Storage Blob Data Owner`; grant the deployer
-  `Storage Blob Data Contributor`.
+  `Storage Blob Data Contributor`; grant the Function App's system identity
+  `Cognitive Services OpenAI User` on the Foundry account.
 - Azure SQL server with the deployer as Entra admin, an `AllowAzureServices`
   `0.0.0.0` firewall rule, and a Basic 2 GB database with zone redundancy off.
 - A post-provision JavaScript hook creates the SQL identity user by client-ID SID,
   idempotently grants reader, writer, and DDL admin roles, attempts every cleanup
   action even after a cleanup failure, and never uses a SQL password.
-- Microsoft Foundry/Azure OpenAI with local auth enabled and the selected model;
-  use `GlobalStandard` for `gpt-5-mini`.
+- Microsoft Foundry/Azure OpenAI with local auth disabled (keyless) and the
+  selected model; use `GlobalStandard` for `gpt-5-mini`.
 - Log Analytics and Application Insights.
-- Function settings for SQL and AI providers, endpoints, deployment, key, SQL
-  FQDN/database/client ID, and identity-based `AzureWebJobsStorage__accountName`.
+- Function settings for SQL and AI providers, endpoints, deployment, SQL
+  FQDN/database/client ID (no AI key and no `listKeys()`), and identity-based `AzureWebJobsStorage__accountName`.
   Do not set `FUNCTIONS_WORKER_RUNTIME`; set `siteConfig.alwaysOn` to `false`.
 - Outputs use `SCREAMING_SNAKE_CASE`; `API_URL` is the origin without `/api`.
 - Add the `azd-service-name: api` tag to the Function App.

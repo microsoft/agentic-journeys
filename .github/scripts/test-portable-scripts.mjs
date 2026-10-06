@@ -5,7 +5,7 @@
 // and macOS; you can run it locally with `node .github/scripts/test-portable-scripts.mjs`.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,6 +83,55 @@ check('SmartTodo setup.mjs --local creates a workspace', () => {
   expect(result.status === 0, result.output);
   expect(existsSync(join(workspace, 'journeys', 'smart-todo', 'PLAN.md')), 'PLAN.md missing');
   expect(existsSync(join(workspace, 'journeys', 'smart-todo', 'src', 'ios')) || existsSync(join(workspace, 'journeys', 'smart-todo', 'starter', 'ios')), 'iOS starter missing');
+  expect(existsSync(join(workspace, '.github', 'hooks', 'tdd-guard.json')) && existsSync(join(workspace, '.github', 'hooks', 'tdd-guard.mjs')), 'TDD guard hook missing');
+  expect(existsSync(join(workspace, '.github', 'copilot-instructions.md')), 'starter copilot-instructions.md missing');
+});
+
+check('SmartTodo TDD guard hook freezes tests while a red tag exists', () => {
+  const repo = join(temp, 'tdd-guard-repo');
+  const api = join(repo, 'journeys', 'smart-todo', 'src', 'api');
+  mkdirSync(join(api, 'test'), { recursive: true });
+  mkdirSync(join(repo, '.github', 'hooks'), { recursive: true });
+  writeFileSync(join(api, 'test', 'a.test.ts'), 'test\n');
+  writeFileSync(join(api, 'index.ts'), 'code\n');
+  for (const args of [['init', '-q', '-b', 'main'], ['add', '.'], ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'init']]) {
+    expect(run('git', args, { cwd: repo }).status === 0, `git ${args[0]} failed`);
+  }
+  const hook = join(root, 'journeys', 'smart-todo', 'setup', 'hooks', 'tdd-guard.mjs');
+  const decide = (toolName, toolArgs, cwd = repo) => {
+    const result = spawnSync('node', [hook], { cwd: repo, encoding: 'utf8', input: JSON.stringify({ cwd, toolName, toolArgs: JSON.stringify(toolArgs) }) });
+    expect(result.status === 0, `hook exited ${result.status}: ${result.stderr}`);
+    return result.stdout.includes('"deny"') ? 'deny' : 'allow';
+  };
+  const testFile = 'journeys/smart-todo/src/api/test/a.test.ts';
+  const cases = [
+    ['edit', { path: join(repo, testFile) }, repo, 'allow', 'test edit before the red tag'],
+    ['edit', { path: join(repo, '.github', 'hooks', 'tdd-guard.json') }, repo, 'deny', 'hook edit'],
+  ];
+  const verify = ([tool, args, cwd, expected, label]) => expect(decide(tool, args, cwd) === expected, `${label}: expected ${expected}`);
+  cases.forEach(verify);
+  expect(run('git', ['tag', 'phase1-red'], { cwd: repo }).status === 0, 'tag failed');
+  [
+    ['edit', { path: join(repo, testFile) }, repo, 'deny', 'test edit after the red tag'],
+    ['create', { path: 'journeys/smart-todo/src/api/test/new.test.ts' }, repo, 'deny', 'new test file'],
+    ['edit', { path: join(api, 'index.ts') }, repo, 'allow', 'code edit'],
+    ['view', { path: join(repo, testFile) }, repo, 'allow', 'view'],
+    ['apply_patch', `*** Begin Patch\n*** Update File: ${testFile}\n*** End Patch`, repo, 'deny', 'apply_patch'],
+    ['bash', { command: 'git tag -d phase1-red' }, repo, 'deny', 'tag delete'],
+    ['bash', { command: 'git tag -f phase1-red HEAD' }, repo, 'deny', 'tag move'],
+    ['bash', { command: 'git -C .. tag --delete phase2-red' }, repo, 'deny', 'tag delete with -C'],
+    ['bash', { command: 'npx vitest run test/a.test.ts 2>&1 | tail -20' }, api, 'allow', 'run tests'],
+    ['bash', { command: 'git diff --exit-code phase1-red -- src/api/test' }, api, 'allow', 'diff gate'],
+    ['bash', { command: `cat ${testFile} > ${join(temp, 'copy.txt')}` }, repo, 'allow', 'read a test'],
+    ['bash', { command: `echo x > ${testFile}` }, repo, 'deny', 'redirect into a test'],
+    ['bash', { command: 'cd journeys/smart-todo/src/api && sed -i.bak s/a/b/ test/a.test.ts' }, repo, 'deny', 'sed -i after cd'],
+    ['bash', { command: 'rm -rf journeys/smart-todo/src/api/test' }, repo, 'deny', 'rm'],
+    ['bash', { command: `git checkout phase1-red -- ${testFile}` }, repo, 'allow', 'restore from the red tag'],
+    ['bash', { command: `git checkout main -- ${testFile}` }, repo, 'deny', 'checkout from another ref'],
+    ['bash', { command: `node -e "require('fs').writeFileSync('src/api/test/a.test.ts', 'x')"` }, repo, 'deny', 'inline write'],
+    ['powershell', { command: `Set-Content -Path ${testFile} -Value x` }, repo, 'deny', 'Set-Content'],
+    ['powershell', { command: 'npm run check' }, api, 'allow', 'PowerShell gate'],
+  ].forEach(verify);
 });
 
 check('SmartTodo checkpoint passes its offline infrastructure gate', () => {

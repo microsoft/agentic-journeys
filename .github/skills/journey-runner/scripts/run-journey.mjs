@@ -83,6 +83,20 @@ function cmd(label, command, commandArgs, { cwd, env, allowFail = false, timeout
   return { status: out.status, output, file };
 }
 
+// The SmartTodo TDD guard hook blocks the agent from changing tests while a red tag exists,
+// so the runner deletes the tag first, as the learner does. If the agent made no new red
+// commit and didn't tag one, put the tag back where it was.
+function unlockTests(tag, cwd) {
+  const old = cmd(`unlock tests (git tag -d ${tag})`, 'git', ['rev-parse', `refs/tags/${tag}`], { cwd }).output.trim();
+  cmd(`delete ${tag}`, 'git', ['tag', '-d', tag], { cwd });
+  return old;
+}
+function relockTests(tag, old, cwd) {
+  if (cmd(`check ${tag}`, 'git', ['rev-parse', '--verify', '--quiet', `refs/tags/${tag}`], { cwd, allowFail: true }).status === 0) return;
+  note(`the agent didn't tag a new red commit, so ${tag} went back to ${old.slice(0, 7)}`);
+  cmd(`restore ${tag}`, 'git', ['tag', tag, old], { cwd });
+}
+
 function startBackground(label, command, commandArgs, { cwd, env } = {}) {
   const file = join(logDir, `bg-${slug(label)}.log`);
   const inv = invocation(command, commandArgs);
@@ -423,14 +437,18 @@ const recipes = {
     const testsFailed = /Tests\s+\d+ failed|\d+ failed \|/.test(check.output);
     if (check.status !== 0 && testsFailed) {
       note('green stopped with failing tests; sent the README red-fix prompt');
+      const red = unlockTests('phase1-red', cwd);
       prompt('Fix only the red tests you reported as impossible to pass', { cwd, session: 'p1', minutes: 120 });
+      relockTests('phase1-red', red, cwd);
       check = cmd('npm run check (after red fix)', 'npm', ['run', 'check'], { cwd: api, allowFail: true });
     }
     result('npm run check', check.status === 0);
     gate('tests unchanged since phase1-red', 'git', ['diff', '--exit-code', 'phase1-red', '--', 'src/api/test'], { cwd });
     await smartTodoLocalVerifier(workspace, cwd);
     prompt('/review Review the phase-1-api branch', { cwd, session: 'p1', fill: local });
-    prompt('=Triage these /review findings with the "Review Triage" section of PLAN.md: fix every correctness, security, and contract finding, and list anything else in known-limitations.md (there is no GitHub repository for issues in this run).', { cwd, session: 'p1', label: 'triage' });
+    const redBeforeTriage = unlockTests('phase1-red', cwd);
+    prompt('=Triage these /review findings with the "Review Triage" section of PLAN.md: fix every correctness, security, and contract finding, and list anything else in known-limitations.md (there is no GitHub repository for issues in this run). Commit the tests for each fix as a new red commit and tag it phase1-red.', { cwd, session: 'p1', label: 'triage' });
+    relockTests('phase1-red', redBeforeTriage, cwd);
     gate('npm run check (after triage)', 'npm', ['run', 'check'], { cwd: api });
     gate('tests unchanged since phase1-red (after triage)', 'git', ['diff', '--exit-code', 'phase1-red', '--', 'src/api/test'], { cwd });
     commitAll(cwd, 'Phase 1 complete');

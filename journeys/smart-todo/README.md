@@ -19,7 +19,7 @@ Deploying is the easy part for an agent. Getting a result worth deploying is the
 - Review the architecture's cost with an agent, then deploy Azure Functions, Azure SQL, and Microsoft Foundry with `azd`, using managed identity instead of keys
 - Capture what worked as a skill, a script that needs no AI, and a Copilot cloud agent setup that builds the next feature
 
-> 💰 **Estimated Cost**: ~$10–30/month while the Azure resources exist, mostly Azure SQL and AI tokens, plus about 2,000–2,500 Copilot AI credits for the whole journey. Phases 0 to 2 create no Azure resources. Plan on 3–4 hours across a few sessions. About an hour and a half of that is Phase 4, mostly waiting for the cloud agent and CI, and you can [start at any phase](#short-on-time-start-at-a-later-phase). See [Cost Breakdown](#cost-breakdown), and run [Cleanup](#cleanup) when you finish.
+> 💰 **Estimated Cost**: ~$10–30/month while the Azure resources exist, mostly Azure SQL and AI tokens, plus about 3,000–3,500 Copilot AI credits for the whole journey. Phases 0 to 2 create no Azure resources. Plan on 5–6 hours across a few sessions. About an hour and a half of that is Phase 4, mostly waiting for the cloud agent and CI, and you can [start at any phase](#short-on-time-start-at-a-later-phase). See [Cost Breakdown](#cost-breakdown), and run [Cleanup](#cleanup) when you finish.
 
 ## Prerequisites
 
@@ -200,7 +200,7 @@ If the journey itself looks wrong, not just your run of it, [report a journey pr
 
 ### Short on time? Start at a later phase
 
-Phases 1 to 3 take 30–45 minutes each, and Phase 4 about an hour and a half, most of it waiting for the cloud agent. To start at a later one, run the setup script with `--start-at <phase>`. It puts the finished code of the earlier phases on `main` from the journey's [checkpoints](./PLAN.md#checkpoints), and every gate still applies to the phase you build. Create all the issues in Phase 0, and close the ones for phases you skipped.
+Phases 1 to 3 take 45–90 minutes each, and Phase 4 about an hour and a half, most of it waiting for the cloud agent. To start at a later one, run the setup script with `--start-at <phase>`. It puts the finished code of the earlier phases on `main` from the journey's [checkpoints](./PLAN.md#checkpoints), and every gate still applies to the phase you build. Create all the issues in Phase 0, and close the ones for phases you skipped.
 
 | Start at | Before you begin |
 | --- | --- |
@@ -599,7 +599,7 @@ It reads `API_URL` through `azd` and must print the same `PASS` line as before. 
 
 ### Step 5: Point the iOS app at Azure (Mac)
 
-Get the URL with `azd env get-value API_URL`, set `Config.apiBaseURL` to it, and run the app in the simulator. Generate steps for a real goal and compare them with the fake ones.
+Get the URL with `azd env get-value API_URL`, set the `#if DEBUG` value of `Config.apiBaseURL` in `src/ios/SmartTodo/ModelsAndClients.swift` to it, and run the app in the simulator. Generate steps for a real goal and compare them with the fake ones. Then undo the change, so that you don't commit your deployment's URL and local runs keep using `localhost`.
 
 ### Step 6: Make it repeatable
 
@@ -743,7 +743,7 @@ The next step is a factory that runs without anyone starting it. This repository
 | Storage Account | Standard LRS | ~$1 |
 | **Total** | | **~$10-30/month** |
 
-**Copilot (the whole journey, with a frontier model):** about 2,000–2,500 AI credits in local sessions, measured in the last validation run: roughly 50 for Phase 0, 800 for Phase 1 (2,000 with the optional `/fleet`), 400 for Phase 2, 650 for Phase 3, and 100 for Phase 4, plus the cloud agent's own sessions. Review triage and the red phases are the largest costs. Cap a run with `/autopilot --max-ai-credits <n>`, or a session with `/limits`.
+**Copilot (the whole journey, with a frontier model):** about 3,000–3,500 AI credits in local sessions, measured in the last validation run: roughly 60 for Phase 0, 1,050 for Phase 1 (more with the optional `/fleet`), 500 for Phase 2 (including about 350 for the Phase 1 Copilot code review), 1,400 for Phase 3, and 60 for Phase 4, plus the cloud agent's own sessions. Review triage, red tests that need a fix, and the infrastructure session are the largest costs. Cap a run with `/autopilot --max-ai-credits <n>`, or a session with `/limits`.
 
 **GitHub Actions:** free for public repositories on standard runners. For private repositories, macOS minutes (the `ios` check) count at a higher rate than Linux and Windows minutes. The Copilot cloud agent uses Actions minutes too.
 

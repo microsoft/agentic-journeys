@@ -79,7 +79,7 @@ Journey-specific minimums:
 | n8n | Node.js LTS or later | Playwright for screenshots |
 | Superset | Node.js LTS or later | Playwright for screenshots; local `kubectl` and Helm only for optional direct cluster work |
 | AIMarket | Node.js LTS or later, GitHub CLI | Playwright; Docker only for optional local container work |
-| SmartTodo | Node.js LTS or later, Git, Azure Functions Core Tools v4, `sqlcmd` | Project-local Azurite for local execution; GitHub CLI only when a disposable repository is provided; Xcode 16+ only for Mac iOS execution |
+| SmartTodo | Node.js LTS or later, Git, Azure Functions Core Tools v4, `sqlcmd` | Project-local Azurite for local execution; GitHub CLI and the `gh stack` extension only when a disposable repository is provided; Xcode 16+ and `ios-simulator` (an installed iOS simulator runtime) only for Mac iOS execution |
 | WeatherView | Node.js LTS or later | Project-local Playwright and bundled Chromium; ARM64 may require the documented temporary x64 Azure publisher or an approved x64 host if the SWA client returns an architecture error |
 
 ### Authentication preflight

@@ -194,7 +194,12 @@ private final class URLSessionTransport: @unchecked Sendable {
 
     init(session: URLSession) {
         self.session = session
-        self.protocolClasses = session.configuration.protocolClasses ?? []
+        // Tests add URLProtocol stubs to the configuration. Foundation's own protocol classes,
+        // such as the HTTP one, must go through URLSession: driven directly, HTTPS never finishes.
+        let system = Set((URLSessionConfiguration.default.protocolClasses ?? []).map(ObjectIdentifier.init))
+        self.protocolClasses = (session.configuration.protocolClasses ?? []).filter {
+            !system.contains(ObjectIdentifier($0))
+        }
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {

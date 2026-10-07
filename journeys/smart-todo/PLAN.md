@@ -39,7 +39,7 @@ The completed application has:
 - **API stack:** Node.js LTS + TypeScript + Azure Functions v4 programming model. Tests use Vitest. Other languages are possible, but the tests, gates, and CI in these plans are specified for Node.js only.
 - **Client:** Swift and SwiftUI for iOS 17 or later, tested with XCTest and XCUITest.
 - **Data:** Azure SQL in Azure. An in-memory store locally and in tests. Access only through repository interfaces.
-- **AI:** `gpt-5-mini` on Microsoft Foundry, with `gpt-4.1` as the regional fallback. A deterministic fake generator locally and in tests.
+- **AI:** `gpt-5-mini` on Microsoft Foundry, with `gpt-4.1` as the regional fallback, called keyless with managed identity. A deterministic fake generator locally and in tests.
 - **Pull requests:** Phases 1 to 3 are one GitHub stack of pull requests, managed with `gh stack`. Phase 4 uses ordinary pull requests.
 - **Deployment:** Azure Developer CLI (`azd`) and Bicep. Prefer Azure Verified Modules, and use a raw `Microsoft.*` fallback when AVM parameter drift blocks deployment.
 - **Default region:** `westus`.
@@ -58,7 +58,7 @@ node journeys/smart-todo/setup/setup.mjs
 It does the following, and stops before changing anything if the workspace directory already exists and isn't empty:
 
 1. Copies `journeys/smart-todo` (without `checkpoints/` and `setup/`), `.github/agents`, `.github/skills`, `.github/scripts`, and `docs` into `../smart-todo-workspace`, keeping their paths.
-2. Adds `setup/ci.yml` as `.github/workflows/ci.yml`, and a root `.gitignore` that excludes secrets and generated files: `.env` and `.env.*` (but allows `.env.example`), `.azure/`, `local.settings.json`, `node_modules/`, `dist/`, `build/`, `coverage/`, `.azurite/`, and the Xcode artifacts `*.xcuserstate`, `xcuserdata/`, and `DerivedData/`.
+2. Adds `setup/ci.yml` as `.github/workflows/ci.yml`, the [TDD Guard](#tdd-guard) hook from `setup/hooks/` as `.github/hooks/`, the starter `setup/copilot-instructions.md` as `.github/copilot-instructions.md`, and a root `.gitignore` that excludes secrets and generated files: `.env` and `.env.*` (but allows `.env.example`), `.azure/`, `local.settings.json`, `node_modules/`, `dist/`, `build/`, `coverage/`, `.azurite/`, and the Xcode artifacts `*.xcuserstate`, `xcuserdata/`, and `DerivedData/`.
 3. Initializes Git on `main` and commits everything as `Initial SmartTodo workspace`.
 4. With `--start-at <phase>`, adds the earlier phases from [Checkpoints](#checkpoints) as a second commit.
 5. Unless `--local` is given, creates the GitHub repository (public unless `--private`), pushes `main`, enables auto-merge, squash merging, and head-branch deletion, creates the `phase-1`, `phase-2`, `phase-3`, and `known-limitation` labels, applies `setup/ruleset.json` as described in [Repository Protection](#repository-protection) (`--no-copilot-review` leaves that rule out), and waits for the first CI run on `main`.
@@ -85,11 +85,12 @@ The learner's workspace is also their GitHub repository. Paths are relative to t
 smart-todo-workspace/
 ├── .github/
 │   ├── agents/tdd-builder.agent.md
+│   ├── hooks/tdd-guard.json, tdd-guard.mjs  # TDD Guard hook
 │   ├── skills/                        # grill-plan and the Phase 3 infrastructure skill
 │   ├── scripts/verify-smart-todo.mjs  # checked-in black-box contract verifier
 │   ├── workflows/ci.yml               # api, ios, infra, and windows checks
 │   ├── workflows/copilot-setup-steps.yml
-│   └── copilot-instructions.md        # definition of done (Phase 4)
+│   └── copilot-instructions.md        # starter in Phase 0; definition of done added in Phase 4
 └── journeys/smart-todo/
     ├── PLAN*.md, images/
     ├── starter/ios/                   # starter Xcode project copied into src/ios in Phase 2
@@ -149,7 +150,16 @@ No phase ships until its gate passes. A gate is a command with a deterministic e
 
 The checked-in verifier (`.github/scripts/verify-smart-todo.mjs`) is the one gate an agent doesn't write. Treat changes to it as a review-required change.
 
-**Red tags move forward.** `phase1-red`, `phase2-red`, and `phase3-red` always point at the latest red commit. When review findings add tests later in the phase, commit those tests as a new red commit and move the tag with `git tag -f phase1-red`. The diff gate then proves that the fix didn't change the new tests either.
+**Red tags move forward.** `phase1-red`, `phase2-red`, and `phase3-red` always point at the latest red commit. When review findings add tests later in the phase, the human deletes the tag (`git tag -d phase1-red`), the agent commits those tests as a new red commit, and the agent tags that commit `phase1-red`. The diff gate then proves that the fix didn't change the new tests either. After the stack merges, the human deletes all three tags, because Phase 4 has no red tags.
+
+## TDD Guard
+
+`setup.mjs` installs a Copilot `preToolUse` hook as `.github/hooks/tdd-guard.json`, which runs `.github/hooks/tdd-guard.mjs` before each tool call in Copilot CLI and the Copilot cloud agent. It needs only Node.js.
+
+- **Frozen tests:** While a red tag exists, the agent can't edit, create, move, or delete the files it protects: `phase1-red` protects `src/api/test/`, `phase2-red` protects `src/ios/SmartTodoTests/` and `src/ios/SmartTodoUITests/`, and `phase3-red` protects `scripts/check-infra.mjs`.
+- **Tags:** The agent can't move or delete a red tag. It can create one that doesn't exist. To unlock tests, the human runs `git tag -d <tag>` in a terminal, and the agent tags its new red commit again.
+- **Always protected:** `.github/hooks/`, `.github/scripts/verify-smart-todo.mjs`, `scripts/test-ios.mjs`, and `starter/`.
+- **Limits:** The hook checks file edits exactly and shell commands on a best-effort basis, so the diff gates stay the proof. Copilot CLI loads repository hooks only in a trusted folder. Tags are local, so the hook protects no tests in a cloud agent session.
 
 ## Verify Before Merge
 
@@ -196,7 +206,7 @@ Rulesets are enforced on public repositories on every GitHub plan. Private repos
 
 Every review finding, from `/review`, `/rubber-duck`, or Copilot code review, gets one of three outcomes:
 
-1. **Fix:** Correctness, security, or contract findings get a red/green loop: a failing test in a new red commit (and move the phase's red tag), then the fix. Reply to the comment with the commits and resolve the thread.
+1. **Fix:** Correctness, security, or contract findings get a red/green loop: a failing test in a new red commit (tagged with the phase's red tag after the human deletes the old one), then the fix. Reply to the comment with the commits and resolve the thread.
 2. **Known limitation:** Real issues outside this phase's scope become a GitHub issue labeled `known-limitation`, with the finding and a one-line suggested fix. Reply to the comment with the issue link and resolve the thread.
 3. **Decline:** Findings that are wrong or conflict with the plan get a reply that cites the plan section. Resolve the thread.
 
@@ -209,7 +219,7 @@ Every review finding, from `/review`, `/rubber-duck`, or Copilot code review, ge
 **Triage procedure for a pull request's review** (what "handle the review" means in the README):
 
 1. Read every review comment with the GitHub CLI.
-2. Give each one an outcome from the list above. Write fixes as the tdd-builder agent's red/green loop: failing tests in a new red commit, then the fix as a green commit. Commit each fix in the layer that owns the change, and move the phase's red tag with `git tag -f` when the phase has one; a cloud agent pull request has no tag, so its fix is checked against the latest red commit instead.
+2. Give each one an outcome from the list above. Write fixes as the tdd-builder agent's red/green loop: failing tests in a new red commit, then the fix as a green commit. Commit each fix in the layer that owns the change. When the phase has a red tag, the human deletes it before the triage starts, and the agent tags the new red commit; a cloud agent pull request has no tag, so its fix is checked against the latest red commit instead.
 3. If a fix touched `infra/` or `src/api` and the Azure environment exists, run [Verify Before Merge](#verify-before-merge) (for `infra/`, `node scripts/check-infra.mjs` and `azd up` first, then `node infra/hooks/postprovision.js`) and paste the verifier's `PASS` line into a pull request comment.
 4. Reply to every thread with its commits, issue link, or reason, and resolve it. If a fix also resolves an open `known-limitation` issue, close that issue with a link to the commit.
 5. Push once, after every fix is committed (`gh stack push` for a stack layer). Don't merge; the human does that.
@@ -233,7 +243,7 @@ main ← phase-1-api ← phase-2-ios ← phase-3-azure
 - **Merge rules apply to every layer as if it targeted `main`.** Required checks and conversation resolution are evaluated against `main` for every layer, and CI's `pull_request` trigger runs for every layer.
 - **Only the bottom layer gets Copilot review automatically.** The ruleset requests it only for pull requests whose base is `main`. The journey reviews Phase 1 and skips the review on Phases 2 and 3 (see [Review Triage](#review-triage)); request one with `gh pr edit <pr> --add-reviewer @copilot` if you want it. Copilot review doesn't block by itself, so an unreviewed layer can merge once its checks pass.
 - **Fix a lower layer in that layer.** Run `gh stack checkout <branch>` (or `gh stack down`), commit the fix, run `gh stack rebase --upstack` to replay the layers above it, then `gh stack top` and `gh stack push`.
-- **Merge once, from the top, after Phase 3:** `gh stack merge <phase-3-pr> --yes --squash`, then `gh stack sync --prune`. It merges that pull request and every unmerged one below it, each as its own squash commit, and merges nothing if any of them isn't ready. `gh pr merge` and auto-merge can't merge stack layers. Don't merge a lower layer early: the layer above it then targets `main`, which triggers the automatic Copilot review. GitHub also treats a stack as a stack only when it has at least two pull requests; a lone layer is an ordinary pull request and merges with `gh pr merge`.
+- **Merge once, from the top, after Phase 3:** `gh stack merge <phase-3-pr> --yes --squash`, then `gh stack sync --prune`. It merges that pull request and every unmerged one below it, each as its own squash commit, and merges nothing if any of them isn't ready. `gh pr merge` and auto-merge can't merge stack layers. Don't merge a lower layer early: the layer above it then targets `main`, which triggers the automatic Copilot review. GitHub also treats a stack as a stack only when it has at least two pull requests; a lone layer is an ordinary pull request and merges with `gh pr merge`. After the merge, delete the red tags with `git tag -d phase1-red phase2-red phase3-red`, so the [TDD Guard](#tdd-guard) doesn't freeze tests in Phase 4.
 - **Red tags survive rebases.** `gh stack rebase` and `sync` rewrite commit IDs, so `phase1-red`, `phase2-red`, and `phase3-red` keep pointing at the original commits. The diff gates compare file contents, so they still work as long as a layer never edits another layer's test files.
 - **One checkout holds the stack.** Layers are built one after another in the same checkout: you can open the next layer while the one below is in review, but you can't have two agents writing two layers at the same time. Don't put stack layers in separate worktrees. Use a worktree only to run the local API, as a detached checkout that moving between layers doesn't disturb: `git worktree add --detach ../../../smart-todo-api phase-1-api`. Worktrees don't share ignored files, so copy `src/api/local.settings.example.json` to `local.settings.json` and run `npm ci` there. After a Phase 1 fix, refresh it with `git checkout --detach phase-1-api` in that worktree and restart the API.
 
@@ -266,4 +276,4 @@ The journey is complete when a Phase 4 feature issue has been delivered through 
 
 ## Production Hardening (Out of Scope)
 
-Before exposing this beyond a demo, wrap multi-write operations (step generation, regeneration, and step-driven status changes) in Azure SQL transactions, add API authentication, move `AZURE_AI_KEY` to Key Vault or managed identity, add rate limiting for `/generate-steps`, encode output if data is rendered in a browser, and replace broad storage and SQL firewall rules with private networking.
+Before exposing this beyond a demo, wrap multi-write operations (step generation, regeneration, and step-driven status changes) in Azure SQL transactions, add API authentication, add rate limiting for `/generate-steps`, encode output if data is rendered in a browser, and replace broad storage and SQL firewall rules with private networking.

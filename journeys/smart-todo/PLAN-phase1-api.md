@@ -15,7 +15,7 @@ Read [`PLAN.md`](./PLAN.md) first for the journey vision, shared decisions, qual
 | Runtime | Node.js LTS + TypeScript |
 | Functions | Azure Functions Node.js v4 programming model (`@azure/functions`) |
 | Azure SQL | `mssql` + `@types/mssql` (dev) |
-| AI | `openai` |
+| AI | `openai`, with `@azure/identity` for keyless Microsoft Entra authentication |
 | Tests | `vitest` |
 | Seed script | `tsx` |
 | Local storage emulator | `azurite` (dev dependency) |
@@ -115,7 +115,7 @@ Two settings select implementations. The factories fail at startup with a clear 
 
 - **`memory`** keeps data in process memory and loads the [Seed Data](#seed-data) on `initialize()`. Restarting the API resets the data. No database is needed.
 - **`fake`** returns deterministic steps with no network call. See [AI Task Decomposition](#ai-task-decomposition).
-- **`sql`** and **`foundry`** are the production implementations. Learners can use them locally by filling in the Azure values in `local.settings.json`, but no phase requires it.
+- **`sql`** and **`foundry`** are the production implementations. Both are keyless: they authenticate with Microsoft Entra ID (managed identity in Azure). Learners can use them locally by filling in the Azure values in `local.settings.json` and signing in with `az login` as a user who has access, but no phase requires it.
 
 Commit this file as `src/api/local.settings.example.json` and copy it to the gitignored `local.settings.json`:
 
@@ -130,8 +130,7 @@ Commit this file as `src/api/local.settings.example.json` and copy it to the git
     "AZURE_SQL_SERVER": "",
     "AZURE_SQL_DATABASE": "SmartTodo",
     "AZURE_AI_ENDPOINT": "",
-    "AZURE_AI_DEPLOYMENT": "gpt-5-mini",
-    "AZURE_AI_KEY": ""
+    "AZURE_AI_DEPLOYMENT": "gpt-5-mini"
   }
 }
 ```
@@ -345,7 +344,7 @@ StepGenerator:
 
 **Foundry generator (`AI_PROVIDER=foundry`):** Uses the plain `openai` SDK with a normalized `/openai/v1/` base URL.
 
-**Client setup:** Normalize `AZURE_AI_ENDPOINT` so it ends with `/openai/v1/`, pass `AZURE_AI_KEY` as the API key, and pass `AZURE_AI_DEPLOYMENT` as the model/deployment name when calling chat completions. If the endpoint or key is empty, throw `AiServiceError` so the endpoint returns 503.
+**Client setup:** Normalize `AZURE_AI_ENDPOINT` so it ends with `/openai/v1/`, and pass `AZURE_AI_DEPLOYMENT` as the model/deployment name when calling chat completions. Authenticate without a key: pass `getBearerTokenProvider(new DefaultAzureCredential(), 'https://cognitiveservices.azure.com/.default')` from `@azure/identity` as the `openai` client's `apiKey`, which accepts an async token function. In Azure, `DefaultAzureCredential` uses the Function App's system-assigned managed identity; locally, it uses your Azure CLI sign-in. Let tests inject the credential, and a `fetch` function that you pass to the `openai` client's `fetch` option. Never call `fetch` or request tokens yourself. There is no `AZURE_AI_KEY` setting. If the endpoint is empty, throw `AiServiceError` so the endpoint returns 503.
 
 Do **not** use a dated `api-version` and do **not** use an Azure-specific client that requires one. The dated GA version (`2024-10-21`) rejects newer parameters such as `reasoning_effort`, and the versionless `/openai/v1` API has been GA since August 2025. There is deliberately no `AZURE_AI_API_VERSION` variable. Do not add one to the app or to the Function App settings.
 
@@ -397,13 +396,12 @@ Respond with ONLY a valid JSON array. No markdown, no code fences, no explanatio
 | AI_PROVIDER | `fake` | `foundry`, set by Bicep |
 | AZURE_AI_ENDPOINT | Empty, or from the Azure portal to try the real model | Set by Bicep output |
 | AZURE_AI_DEPLOYMENT | `gpt-5-mini` | Set by Bicep output |
-| AZURE_AI_KEY | Empty, or an API key from the portal | Set by Bicep |
 
 ---
 
 ## Test Strategy
 
-Every test in `npm test` runs without a database, an AI key, or network access, so it gives the same result on a laptop, in CI, and in a cloud agent session.
+Every test in `npm test` runs without a database, Azure credentials, or network access, so it gives the same result on a laptop, in CI, and in a cloud agent session.
 
 **Composition:** Each test builds a fresh, seeded in-memory `DataStore` and passes it, with a fake or scripted `StepGenerator`, to the handler under test. A scripted generator returns queued results so tests can simulate a bad answer followed by a good one. Construct requests with the `HttpRequest` class exported by `@azure/functions` v4.
 
@@ -422,7 +420,7 @@ Every test in `npm test` runs without a database, an AI key, or network access, 
 
 Every error test also asserts the `{ error: { code, message } }` envelope.
 
-**AI tests (`test/ai/`)** cover: a plain JSON array; a fenced ` ```json ` response; prose around the JSON (invalid); a missing `description` (invalid); a whitespace-only title and a 201-character title (invalid); the step-count rule for 2 and 9 items; one invalid answer followed by a valid one (success after exactly two calls); two invalid answers (`AiServiceError`); a timeout that aborts the request's `AbortSignal` before the retry starts; and endpoint normalization with and without `/openai/v1/` and a trailing slash. Use recorded fixture strings, not a real model.
+**AI tests (`test/ai/`)** cover: a plain JSON array; a fenced ` ```json ` response; prose around the JSON (invalid); a missing `description` (invalid); a whitespace-only title and a 201-character title (invalid); the step-count rule for 2 and 9 items; one invalid answer followed by a valid one (success after exactly two calls); two invalid answers (`AiServiceError`); a timeout that aborts the request's `AbortSignal` before the retry starts; endpoint normalization with and without `/openai/v1/` and a trailing slash; and keyless authentication, through an injected credential and `fetch`: the generator requests a token for `https://cognitiveservices.azure.com/.default`, calls `<endpoint>/openai/v1/chat/completions` with `Authorization: Bearer <token>`, and sends no `api-key` header. Use recorded fixture strings, not a real model.
 
 **Repository contract suite (`test/data/`):** Write one shared suite of repository behaviors, including `getByTodoIds` and ordering, as an exported function. Run it against the in-memory store in every test run. Call the same function against Azure SQL only when `AZURE_SQL_SERVER` is set, and skip it otherwise. Don't write a smaller, separate SQL test instead. SQL runs use a unique `userId`, delete their rows, and close the SQL store's connection pool in `afterAll`, even when a test fails.
 
@@ -434,7 +432,7 @@ Every error test also asserts the `{ error: { code, message } }` envelope.
 
 **Seed tests:** Assert the exact seed IDs, statuses, and step completion states from both stores' seed paths, and assert that seeding twice doesn't duplicate rows. The same tests passing on both stores is the payoff of the repository pattern.
 
-**Red phase:** Add only stubs that throw `Not implemented`, so the suite compiles and fails on assertions. Commit the tests and stubs, and tag the commit `phase1-red`. When review findings add tests later, commit them as a new red commit and move the tag with `git tag -f phase1-red`.
+**Red phase:** Add only stubs that throw `Not implemented`, so the suite compiles and fails on assertions. Commit the tests and stubs, and tag the commit `phase1-red`. When review findings add tests later, the human deletes the tag, and the agent commits the tests as a new red commit and tags it `phase1-red` again.
 
 ---
 

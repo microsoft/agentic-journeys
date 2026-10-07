@@ -57,6 +57,18 @@ function runCheck(tool) {
       : { ok: false, detail: `missing; run npm ci in ${scriptDir}` };
   }
 
+  // Xcode can be installed with no iOS simulator runtime; then iOS tests can't run.
+  if (tool === 'ios-simulator') {
+    const result = run('xcrun', ['simctl', 'list', 'runtimes', '--json'], { allowFailure: true, timeout: 30000 });
+    let runtimes = [];
+    try {
+      runtimes = JSON.parse(result.stdout ?? '{}').runtimes?.filter((runtime) => runtime.platform === 'iOS' && runtime.isAvailable) ?? [];
+    } catch {}
+    return runtimes.length
+      ? { ok: true, detail: runtimes.map((runtime) => runtime.name).join(', ') }
+      : { ok: false, detail: 'no iOS simulator runtime; install one with xcodebuild -downloadPlatform iOS (about 8 GB)' };
+  }
+
   if (tool === 'docker-daemon') {
     const result = run('docker', ['info'], { allowFailure: true, timeout: 30000 });
     return {

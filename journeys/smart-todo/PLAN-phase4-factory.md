@@ -13,15 +13,12 @@ issue ─► cloud agent (tdd-builder + skills + setup steps)
 
 ## Definition of Done
 
-Create `.github/copilot-instructions.md` at the workspace root. Copilot CLI and the Copilot cloud agent both read it. Keep it under 60 lines:
+`setup.mjs` created a starter `.github/copilot-instructions.md` in Phase 0 with the map, the workflow, the protected files, and the rules for every session. Copilot CLI, the Copilot app, Copilot code review, and the Copilot cloud agent all read it. Add a `## Definition of Done` section to it, and keep the whole file under 80 lines:
 
-- **Map:** where the plans, API, iOS app, infrastructure, and scripts live.
-- **Gates:** the commands from [Quality Gates](./PLAN.md#quality-gates), and which ones can run on Linux. The `ios` CI check is the only gate for Swift changes made on Linux, and the work isn't done until it passes.
-- **Workflow:** use the `tdd-builder` agent. Commit failing tests first, then make them pass without changing them.
+- **Gates:** which commands from [Quality Gates](./PLAN.md#quality-gates) can run on Linux. The `ios` CI check is the only gate for Swift changes made on Linux, and the work isn't done until it passes.
 - **Reviews:** follow the Review Triage section of `journeys/smart-todo/PLAN.md`: one round, fixes in one push. Never enable auto-merge before the Copilot review has posted.
-- **Contracts:** update the relevant plan section before changing behavior. Plans are the source of truth.
-- **Protected files:** never edit `.github/scripts/verify-smart-todo.mjs` or earlier red-phase tests without calling it out in the pull request description.
-- **Records:** list problems you hit and fixed in the pull request description under "Problems and fixes". File out-of-scope findings as GitHub issues labeled `known-limitation`. Never commit secrets.
+- **Protected tests:** the cloud agent has no red tags, so the hook doesn't freeze its tests. Never change tests from an earlier red commit without calling it out in the pull request description.
+- **Records:** file out-of-scope findings as GitHub issues labeled `known-limitation`.
 - **Azure:** after Phase 3, a change to `src/api` or `infra` isn't done until the Verify Before Merge section of `journeys/smart-todo/PLAN.md` passes.
 
 ## Cloud Agent Environment
@@ -101,7 +98,7 @@ Deploy application code on every merge to `main`, gated by the deployed verifier
 
 ## Phase 4 Acceptance Criteria
 
-- `.github/copilot-instructions.md` defines the gates and the workflow.
+- `.github/copilot-instructions.md` has a Definition of Done section with the gates, the review rules, and the Azure rule.
 - The `copilot-setup-steps` workflow ran successfully.
 - The due dates issue was delivered by the Copilot cloud agent as a pull request with plan, red, and green commits in that order. Without the cloud agent, deliver it locally with `tdd-builder`'s full cycle in a worktree, through the same pull request gates.
 - The pull request merged through the ruleset with green `api`, `ios`, and `infra` checks and a resolved Copilot code review.

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "command": "node .github/hooks/tdd-guard.mjs",
+        "cwd": ".",
+        "timeoutSec": 15
+      }
+    ]
+  }
+}

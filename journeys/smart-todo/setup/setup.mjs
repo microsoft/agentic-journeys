@@ -142,6 +142,14 @@ function createWorkspace(workspace) {
     path.join(workspace, '.github', 'workflows', 'ci.yml'),
     readFileSync(path.join(setupDir, 'ci.yml'), 'utf8'),
   );
+  mkdirSync(path.join(workspace, '.github', 'hooks'), { recursive: true });
+  for (const file of ['tdd-guard.json', 'tdd-guard.mjs']) {
+    writeFileSync(path.join(workspace, '.github', 'hooks', file), readFileSync(path.join(setupDir, 'hooks', file), 'utf8'));
+  }
+  writeFileSync(
+    path.join(workspace, '.github', 'copilot-instructions.md'),
+    readFileSync(path.join(setupDir, 'copilot-instructions.md'), 'utf8'),
+  );
   writeFileSync(path.join(workspace, '.gitignore'), GITIGNORE);
 
   run('git', ['init', '--quiet'], { cwd: workspace });

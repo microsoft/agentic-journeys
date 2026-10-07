@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AiServiceError } from '../../src/ai/contracts.js';
 import {
   createFoundryStepGenerator,
+  FOUNDRY_TOKEN_SCOPE,
   normalizeFoundryEndpoint,
 } from '../../src/ai/foundry-generator.js';
 
@@ -34,7 +35,6 @@ describe('Foundry step generator', () => {
     const client = clientWith(['not json', valid]);
     const generator = createFoundryStepGenerator({
       endpoint: 'https://example.test',
-      apiKey: 'test-key',
       deployment: 'gpt-5-mini',
       client,
     });
@@ -50,7 +50,6 @@ describe('Foundry step generator', () => {
     const client = clientWith([tooFew, tooFew]);
     const generator = createFoundryStepGenerator({
       endpoint: 'https://example.test',
-      apiKey: 'test-key',
       deployment: 'gpt-5-mini',
       client,
     });
@@ -62,7 +61,6 @@ describe('Foundry step generator', () => {
     const client = clientWith(['invalid', 'still invalid']);
     const generator = createFoundryStepGenerator({
       endpoint: 'https://example.test',
-      apiKey: 'test-key',
       deployment: 'gpt-5-mini',
       client,
     });
@@ -89,7 +87,6 @@ describe('Foundry step generator', () => {
     });
     const generator = createFoundryStepGenerator({
       endpoint: 'https://example.test',
-      apiKey: 'test-key',
       deployment: 'gpt-5-mini',
       client: { chat: { completions: { create } } },
       timeoutMs: 5,
@@ -104,7 +101,6 @@ describe('Foundry step generator', () => {
     const client = clientWith(['bad', valid]);
     const generator = createFoundryStepGenerator({
       endpoint: 'https://example.test',
-      apiKey: 'test-key',
       deployment: 'gpt-5-mini',
       client,
     });
@@ -122,7 +118,6 @@ describe('Foundry step generator', () => {
     const client = clientWith([valid]);
     const generator = createFoundryStepGenerator({
       endpoint: 'https://example.test',
-      apiKey: 'test-key',
       deployment: 'gpt-5-mini',
       client,
     });
@@ -138,5 +133,33 @@ describe('Foundry step generator', () => {
     });
     expect(body).not.toHaveProperty('max_tokens');
     expect(body).not.toHaveProperty('temperature');
+  });
+
+  it('authenticates with a Microsoft Entra bearer token and sends no API key', async () => {
+    const getToken = vi.fn(async (_scopes: string | string[], _options?: unknown) => ({ token: 'entra-token', expiresOnTimestamp: Date.now() + 3_600_000 }));
+    const requests: Array<{ url: string; headers: Headers }> = [];
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({ url: String(input), headers: new Headers(init?.headers) });
+      return new Response(JSON.stringify({ choices: [{ message: { content: valid } }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    const generator = createFoundryStepGenerator({
+      endpoint: 'https://example.openai.azure.com',
+      deployment: 'gpt-5-mini',
+      credential: { getToken },
+      fetch: fetch as unknown as typeof globalThis.fetch,
+    });
+    await expect(generator.generate('Ship feature')).resolves.toHaveLength(3);
+    expect([getToken.mock.calls[0][0]].flat()).toEqual([FOUNDRY_TOKEN_SCOPE]);
+    expect(requests[0].url).toBe('https://example.openai.azure.com/openai/v1/chat/completions');
+    expect(requests[0].headers.get('authorization')).toBe('Bearer entra-token');
+    expect(requests[0].headers.get('api-key')).toBeNull();
+  });
+
+  it('throws AiServiceError when AZURE_AI_ENDPOINT is empty', async () => {
+    const generator = createFoundryStepGenerator({ endpoint: '', deployment: 'gpt-5-mini' });
+    await expect(generator.generate('Ship feature')).rejects.toBeInstanceOf(AiServiceError);
   });
 });

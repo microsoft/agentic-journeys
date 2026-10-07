@@ -185,7 +185,7 @@ resource aiAccount 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
   }
   properties: {
     customSubDomainName: aiAccountName
-    disableLocalAuth: false
+    disableLocalAuth: true
     publicNetworkAccess: 'Enabled'
   }
 }
@@ -234,10 +234,6 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         {
           name: 'AZURE_AI_DEPLOYMENT'
           value: aiDeploymentName
-        }
-        {
-          name: 'AZURE_AI_KEY'
-          value: aiAccount.listKeys().key1
         }
         {
           name: 'AZURE_SQL_SERVER'
@@ -302,6 +298,27 @@ resource functionStorageOwner 'Microsoft.Authorization/roleAssignments@2022-04-0
     roleDefinitionId: subscriptionResourceId(
       'Microsoft.Authorization/roleDefinitions',
       'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
+    )
+  }
+}
+
+// Keyless AI: the Function App's system-assigned identity calls Foundry with a Microsoft Entra token.
+resource functionAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(
+    aiAccount.id,
+    functionApp.id,
+    subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
+    )
+  )
+  scope: aiAccount
+  properties: {
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
     )
   }
 }
